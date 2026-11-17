@@ -1,0 +1,261 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AttendanceSource {
+  LEGACY
+  PWA
+  ADMIN
+}
+
+enum DeviceStatus {
+  pending
+  active
+  revoked
+}
+
+model User {
+  nik           String   @id @db.VarChar(50)
+  namaLengkap   String   @map("nama_lengkap") @db.VarChar(100)
+  isActive      Boolean  @default(true) @map("is_active")
+  signaturePath String?  @map("signature_path") @db.VarChar(255)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  attendances           Attendance[]
+  attendanceCorrections AttendanceCorrectionLog[]
+  device                UserDevice?
+
+  @@map("users")
+}
+
+model Admin {
+  id          Int      @id @default(autoincrement())
+  username    String   @unique @db.VarChar(50)
+  password    String   @db.VarChar(255)
+  namaLengkap String   @map("nama_lengkap") @db.VarChar(100)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  registeredDevices          UserDevice[]
+  sessions                   AdminSession[]
+  sessionRecoveries          DeviceSessionRecovery[]
+  securityAuditLogs          SecurityAuditLog[]
+  attendanceSessionVersions  AttendanceSessionVersion[]
+  disabledAttendanceSessions AttendanceSessionDefinition[] @relation("AttendanceSessionDisabledBy")
+  attendanceCorrections      AttendanceCorrectionLog[]
+
+  @@map("admins")
+}
+
+model Attendance {
+  id                  Int              @id @default(autoincrement())
+  nik                 String           @db.VarChar(50)
+  tanggal             DateTime         @db.Date
+  sesi                String?          @db.VarChar(64)
+  sessionId           Int              @map("session_id")
+  sessionVersionId    Int?             @map("session_version_id")
+  sessionNameSnapshot String           @map("session_name_snapshot") @db.VarChar(100)
+  source              AttendanceSource @default(LEGACY)
+  waktuAbsen          DateTime         @map("waktu_absen") @db.Timestamptz(3)
+  status              String           @default("Hadir") @db.VarChar(20)
+
+  user           User                        @relation(fields: [nik], references: [nik], onDelete: Restrict, onUpdate: Cascade)
+  session        AttendanceSessionDefinition @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sessionVersion AttendanceSessionVersion?   @relation(fields: [sessionVersionId, sessionId], references: [id, sessionId], onDelete: Restrict, onUpdate: Cascade, map: "attendances_session_version_id_session_id_fkey")
+  correctionLogs AttendanceCorrectionLog[]
+
+  @@unique([id, nik, tanggal, sessionId], map: "attendances_id_nik_tanggal_session_id_key")
+  @@unique([nik, tanggal, sessionId])
+  @@unique([nik, tanggal, sesi], map: "attendances_nik_tanggal_sesi_key")
+  @@index([tanggal])
+  @@index([sessionId, tanggal])
+  @@map("attendances")
+}
+
+model AttendanceSessionDefinition {
+  id                      Int       @id @default(autoincrement())
+  key                     String    @unique @db.VarChar(64)
+  disabledAt              DateTime? @map("disabled_at") @db.Timestamptz(3)
+  disabledByAdminId       Int?      @map("disabled_by_admin_id")
+  disabledByAdminUsername String?   @map("disabled_by_admin_username") @db.VarChar(50)
+  enabledFrom             DateTime? @map("enabled_from") @db.Date
+  deletedAt               DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  versions        AttendanceSessionVersion[]
+  attendances     Attendance[]
+  correctionLogs  AttendanceCorrectionLog[]
+  disabledByAdmin Admin?                     @relation("AttendanceSessionDisabledBy", fields: [disabledByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([disabledByAdminId])
+  @@map("attendance_sessions")
+}
+
+model AttendanceSessionVersion {
+  id                     Int       @id @default(autoincrement())
+  sessionId              Int       @map("session_id")
+  name                   String    @db.VarChar(100)
+  sortOrder              Int       @map("sort_order")
+  isActive               Boolean   @default(true) @map("is_active")
+  effectiveFrom          DateTime  @map("effective_from") @db.Date
+  startTime              DateTime? @map("start_time") @db.Time(0)
+  endTime                DateTime? @map("end_time") @db.Time(0)
+  createdByAdminId       Int?      @map("created_by_admin_id")
+  createdByAdminUsername String?   @map("created_by_admin_username") @db.VarChar(50)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  session        AttendanceSessionDefinition    @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdByAdmin Admin?                         @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  daySchedules   AttendanceSessionDaySchedule[]
+  attendances    Attendance[]
+  correctionLogs AttendanceCorrectionLog[]
+
+  @@unique([sessionId, effectiveFrom])
+  @@unique([id, sessionId], map: "attendance_session_versions_id_session_id_key")
+  @@index([effectiveFrom])
+  @@map("attendance_session_versions")
+}
+
+model AttendanceSessionDaySchedule {
+  id               Int      @id @default(autoincrement())
+  sessionVersionId Int      @map("session_version_id")
+  isoWeekday       Int      @map("iso_weekday") @db.SmallInt
+  isEnabled        Boolean  @default(false) @map("is_enabled")
+  startTime        DateTime @map("start_time") @db.Time(0)
+  endTime          DateTime @map("end_time") @db.Time(0)
+
+  sessionVersion AttendanceSessionVersion @relation(fields: [sessionVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([sessionVersionId, isoWeekday], map: "attendance_session_day_schedules_version_weekday_key")
+  @@map("attendance_session_day_schedules")
+}
+
+model AttendanceCorrectionLog {
+  id                       Int      @id @default(autoincrement())
+  nik                      String   @db.VarChar(50)
+  attendanceDate           DateTime @map("attendance_date") @db.Date
+  sessionId                Int      @map("session_id")
+  sessionVersionId         Int?     @map("session_version_id")
+  attendanceId             Int?     @map("attendance_id")
+  revision                 Int
+  previousStatus           String   @map("previous_status") @db.VarChar(20)
+  newStatus                String   @map("new_status") @db.VarChar(20)
+  reason                   String   @db.VarChar(500)
+  correctedByAdminId       Int      @map("corrected_by_admin_id")
+  correctedByAdminUsername String   @map("corrected_by_admin_username") @db.VarChar(50)
+  correctedAt              DateTime @default(dbgenerated("statement_timestamp()")) @map("corrected_at") @db.Timestamptz(3)
+
+  user             User                        @relation(fields: [nik], references: [nik], onDelete: Restrict, onUpdate: Cascade)
+  session          AttendanceSessionDefinition @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sessionVersion   AttendanceSessionVersion?   @relation(fields: [sessionVersionId, sessionId], references: [id, sessionId], onDelete: Restrict, onUpdate: Cascade, map: "attendance_correction_logs_session_version_id_session_id_fkey")
+  attendance       Attendance?                 @relation(fields: [attendanceId, nik, attendanceDate, sessionId], references: [id, nik, tanggal, sessionId], onDelete: Restrict, onUpdate: Cascade, map: "attendance_correction_logs_attendance_nik_date_session_fkey")
+  correctedByAdmin Admin                       @relation(fields: [correctedByAdminId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([nik, attendanceDate, sessionId, revision], map: "attendance_correction_logs_nik_date_session_revision_key")
+  @@index([nik, attendanceDate, sessionId, correctedAt], map: "attendance_correction_logs_nik_date_session_corrected_idx")
+  @@index([attendanceId])
+  @@map("attendance_correction_logs")
+}
+
+model UserDevice {
+  id         Int          @id @default(autoincrement())
+  nik        String       @unique @db.VarChar(50)
+  deviceUuid String?      @unique @map("device_uuid") @db.VarChar(100)
+  status     DeviceStatus @default(pending)
+  deviceName String?      @map("device_name") @db.VarChar(100)
+
+  enrollmentCodeHash  String?   @map("enrollment_code_hash") @db.VarChar(255)
+  enrollmentExpiresAt DateTime? @map("enrollment_expires_at") @db.Timestamptz(3)
+  enrollmentUsedAt    DateTime? @map("enrollment_used_at") @db.Timestamptz(3)
+
+  registeredByAdminId Int?      @map("registered_by_admin_id")
+  registeredAt        DateTime? @map("registered_at") @db.Timestamptz(3)
+  activatedAt         DateTime? @map("activated_at") @db.Timestamptz(3)
+  lastUsedAt          DateTime? @map("last_used_at") @db.Timestamptz(3)
+  revokedAt           DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user              User                    @relation(fields: [nik], references: [nik], onDelete: Restrict, onUpdate: Cascade)
+  registeredBy      Admin?                  @relation(fields: [registeredByAdminId], references: [id], onDelete: SetNull)
+  sessions          UserSession[]
+  sessionRecoveries DeviceSessionRecovery[]
+  securityAuditLogs SecurityAuditLog[]
+
+  @@map("user_devices")
+}
+
+model UserSession {
+  id         Int       @id @default(autoincrement())
+  deviceId   Int       @map("device_id")
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(255)
+  ipAddress  String?   @map("ip_address") @db.VarChar(45)
+  userAgent  String?   @map("user_agent") @db.Text
+  expiresAt  DateTime? @map("expires_at") @db.Timestamptz(3)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  device UserDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+model DeviceSessionRecovery {
+  id               Int       @id @default(autoincrement())
+  deviceId         Int       @map("device_id")
+  codeHash         String    @unique @map("code_hash") @db.VarChar(64)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt           DateTime? @map("used_at") @db.Timestamptz(3)
+  invalidatedAt    DateTime? @map("invalidated_at") @db.Timestamptz(3)
+  createdByAdminId Int?      @map("created_by_admin_id")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  device         UserDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  createdByAdmin Admin?     @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([deviceId, expiresAt])
+  @@map("device_session_recoveries")
+}
+
+model SecurityAuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String   @db.VarChar(50)
+  nik       String?  @db.VarChar(50)
+  adminId   Int?     @map("admin_id")
+  deviceId  Int?     @map("device_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  admin  Admin?      @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  device UserDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([nik, createdAt])
+  @@index([adminId, createdAt])
+  @@map("security_audit_logs")
+}
+
+model AdminSession {
+  id         Int       @id @default(autoincrement())
+  adminId    Int       @map("admin_id")
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(64)
+  ipAddress  String?   @map("ip_address") @db.VarChar(45)
+  userAgent  String?   @map("user_agent") @db.VarChar(500)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([expiresAt])
+  @@map("admin_sessions")
+}

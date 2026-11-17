@@ -1,0 +1,11 @@
+import type { Request, Response } from "express";
+export declare function todaySessions(_req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listAdminSessions(_req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listArchivedAdminSessions(_req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function createAdminSession(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
+export declare function addAdminSessionVersion(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
+export declare function disableAdminSession(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
+export declare function archiveAdminSession(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
+export declare function deleteAdminSessionPermanently(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
+export declare function correctAdminAttendance(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
+export declare function listAdminAttendanceCorrections(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

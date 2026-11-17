@@ -1,0 +1,5 @@
+$kind: http-request
+name: DAFTAR DAN DETAIL ADMIN
+url: ""
+method: GET
+order: 21000

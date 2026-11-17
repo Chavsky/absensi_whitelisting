@@ -1,0 +1,9 @@
+$kind: http-request
+url: http://localhost:3000/api/employees?search=1987654321
+method: GET
+queryParams:
+  search: "1987654321"
+body:
+  type: json
+  content: ""
+order: 11000
